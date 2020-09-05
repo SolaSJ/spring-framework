@@ -1,3 +1,11 @@
+buildscript {
+    repositories {
+        maven { url 'https://maven.aliyun.com/nexus/content/groups/public/' }
+        maven { url 'https://maven.aliyun.com/nexus/content/repositories/jcenter' }
+        maven { url "https://repo.spring.io/plugins-release" }
+    }
+}
+
 plugins {
 	id 'io.spring.dependency-management' version '1.0.9.RELEASE' apply false
 	id 'io.spring.gradle-enterprise-conventions' version '0.0.2'
@@ -7,7 +15,7 @@ plugins {
 	id 'org.asciidoctor.jvm.convert' version '2.4.0'
 	id 'de.undercouch.download' version '4.1.1'
 	id "io.freefair.aspectj" version '4.1.6' apply false
-	id 'com.gradle.build-scan' version '3.2'
+	id 'com.gradle.build-scan' version '3.4.1'
 	id "com.jfrog.artifactory" version '4.12.0' apply false
 	id "com.github.ben-manes.versions" version '0.24.0'
 }
@@ -277,6 +285,10 @@ configure(allprojects) { project ->
 			cacheChangingModulesFor 0, "seconds"
 		}
 		repositories {
+            maven { url 'https://maven.aliyun.com/nexus/content/groups/public/' }
+            maven { url 'https://maven.aliyun.com/nexus/content/repositories/jcenter' }
+            maven { url "https://repo.spring.io/plugins-release" }
+
 			mavenCentral()
 			maven { url "https://repo.spring.io/libs-spring-framework-build" }
 		}
