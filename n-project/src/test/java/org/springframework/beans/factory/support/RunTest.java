@@ -6,7 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.MutablePropertyValues;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.beans.factory.config.RuntimeBeanReference;
+
+import static org.springframework.beans.factory.config.BeanDefinition.SCOPE_PROTOTYPE;
 
 /**
  * @author Sola
@@ -21,6 +25,15 @@ public class RunTest {
 	 * 2. 定义后置处理器
 	 * 3. 创建 bean
 	 * 4. 添加 bean 到单例池
+	 * <p>
+	 * 涉及的核心类和方法如下:
+	 * 1. 实例化 bean -> AbstractAutowireCapableBeanFactory#createBeanInstance
+	 * 2. 填充属性 -> AbstractAutowireCapableBeanFactory#populateBean
+	 * 3. 对象初始化 -> AbstractAutowireCapableBeanFactory#initializeBean
+	 * 该方法包含了前置处理, 调用初始化方法, 后置处理,
+	 * 初始化方法指实现了 InitializingBean 接口的类, 会调用 InitializingBean#afterPropertiesSet 方法
+	 * 4. 添加对象到单例池 -> DefaultSingletonBeanRegistry#getSingleton(beanName, singletonFactory)
+	 * spring 通常采用以上方法添加到单例池, 也可以通过 addSingleton 添加到单例池
 	 */
 	@Test
 	public void testCreateBean() {
@@ -71,10 +84,63 @@ public class RunTest {
 		log.info("获取到 bean: {}", bean);
 	}
 
+	/**
+	 * 测试单例情况下的循环依赖是否能够成功创建
+	 * spring 对单例创建解决了循环依赖的问题
+	 */
+	@Test
+	public void testSingletonCircularReferences() {
+		DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+
+		// 向工厂中注册 MyService 类的定义
+		RootBeanDefinition mbd = new RootBeanDefinition(MyService.class);
+		mbd.setPropertyValues(new MutablePropertyValues().add("serviceB",
+															  new RuntimeBeanReference("serviceB")));
+		beanFactory.registerBeanDefinition("myService", mbd);
+
+		// 向工厂中注册 ServiceB 类的定义
+		RootBeanDefinition mbd2 = new RootBeanDefinition(ServiceB.class);
+		mbd2.setPropertyValues(new MutablePropertyValues().add("myService",
+															   new RuntimeBeanReference("myService")));
+		beanFactory.registerBeanDefinition("serviceB", mbd2);
+
+		MyService bean = beanFactory.getBean(MyService.class);
+		log.info("获取 bean: {}", bean);
+	}
+
+	/**
+	 * 测试多例模式下的循环依赖是否能够成功创建
+	 * spring 不能处理多例模式下的循环依赖问题
+	 */
+	@Test
+	public void testPrototypeCircularReferences() {
+		DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+
+		RootBeanDefinition mbd = new RootBeanDefinition(MyService.class);
+		mbd.setScope(SCOPE_PROTOTYPE);
+		mbd.setPropertyValues(new MutablePropertyValues().add("serviceB",
+															  new RuntimeBeanReference("serviceB")));
+		beanFactory.registerBeanDefinition("myService", mbd);
+
+		RootBeanDefinition mbd2 = new RootBeanDefinition(ServiceB.class);
+		mbd2.setPropertyValues(new MutablePropertyValues().add("myService",
+															   new RuntimeBeanReference("myService")));
+		beanFactory.registerBeanDefinition("serviceB", mbd2);
+
+		MyService bean = beanFactory.getBean(MyService.class);
+		log.info("获取 bean: {}", bean);
+	}
+
 	@Setter
 	@Getter
-	private static class MyService {
+	private static class MyService implements InitializingBean {
 		private int id;
+		private ServiceB serviceB;
+
+		@Override
+		public void afterPropertiesSet() throws Exception {
+			log.info("调用初始化方法 InitializingBean#afterPropertiesSet");
+		}
 	}
 
 	@Setter
@@ -85,6 +151,12 @@ public class RunTest {
 		public MyService$proxy(MyService myService) {
 			this.myService = myService;
 		}
+	}
+
+	@Setter
+	@Getter
+	private static class ServiceB {
+		private MyService myService;
 	}
 
 }

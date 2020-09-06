@@ -167,21 +167,32 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	 */
 	@Nullable
 	protected Object getSingleton(String beanName, boolean allowEarlyReference) {
-		// Quick check for existing instance without full singleton lock
+		// Quick check for existing instance without full singleton lock (快速的检查已经存在的单例, 没有对 full singleton 进行加锁)
+		// 1. 先检查单例池中是否已有指定 beanName 的实例
 		Object singletonObject = this.singletonObjects.get(beanName);
 		if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
+			// 单例池中没有, 且当前 bean 处于创建过程中
+			// 2. 从早期单例池中获取是否有指定 beanName 的实例
 			singletonObject = this.earlySingletonObjects.get(beanName);
 			if (singletonObject == null && allowEarlyReference) {
+				// 早期单例池中也没有, 且 allowEarlyReference 为 true
 				synchronized (this.singletonObjects) {
-					// Consistent creation of early reference within full singleton lock
+					// Consistent creation of early reference within full singleton lock (为了保证早期引用创建的一致性, 这里对 full singleTon 进行了加锁)
+					// 再次从单例池中获取
 					singletonObject = this.singletonObjects.get(beanName);
 					if (singletonObject == null) {
+						// 再次从早期单例池中获取
 						singletonObject = this.earlySingletonObjects.get(beanName);
 						if (singletonObject == null) {
+							// 3. 从单例工厂池中获取单例工厂
 							ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
 							if (singletonFactory != null) {
+								// 即在单例工厂池中找到对应单例工厂的话, 将单例工厂从单例工厂池转移到早期单例池中
+								// 如果单例工厂中获取不为 null
 								singletonObject = singletonFactory.getObject();
+								// 在早期单例池中添加单例工厂
 								this.earlySingletonObjects.put(beanName, singletonObject);
+								// 将单例工厂池中对应的单例工厂移除
 								this.singletonFactories.remove(beanName);
 							}
 						}
@@ -207,12 +218,13 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 			if (singletonObject == null) {
 				if (this.singletonsCurrentlyInDestruction) {
 					throw new BeanCreationNotAllowedException(beanName,
-							"Singleton bean creation not allowed while singletons of this factory are in destruction " +
-							"(Do not request a bean from a BeanFactory in a destroy method implementation!)");
+															  "Singleton bean creation not allowed while singletons of this factory are in destruction " +
+																	  "(Do not request a bean from a BeanFactory in a destroy method implementation!)");
 				}
 				if (logger.isDebugEnabled()) {
 					logger.debug("Creating shared instance of singleton bean '" + beanName + "'");
 				}
+				// 该方法会将正在创建的 bean 添加到 singletonsCurrentlyInCreation 中, 标识 bean 正在创建
 				beforeSingletonCreation(beanName);
 				boolean newSingleton = false;
 				boolean recordSuppressedExceptions = (this.suppressedExceptions == null);

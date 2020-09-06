@@ -547,15 +547,19 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			}
 		}
 
+		// 对单例进行缓存, 来解决循环依赖的问题 (对于多例的情况, 不能解决循环依赖, 会抛出异常)
 		// Eagerly cache singletons to be able to resolve circular references
 		// even when triggered by lifecycle interfaces like BeanFactoryAware.
-		boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences &&
-				isSingletonCurrentlyInCreation(beanName));
+		boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences && isSingletonCurrentlyInCreation(beanName));
+		// 这里需要满足三个条件, 才进行循环依赖的处理:
+		// 1. 判断 bean 的定义是否是单例的
+		// 2. 判断是否允许自动处理循环依赖, 默认为 true (自定义工厂时可以设置)
+		// 3. 判断 bean 有没有正在创建 (在 DefaultSingletonBeanRegistry#getSingleton 方法中, 调用 beforeSingletonCreation 方法标识 bean 正在创建中)
 		if (earlySingletonExposure) {
 			if (logger.isTraceEnabled()) {
-				logger.trace("Eagerly caching bean '" + beanName +
-									 "' to allow for resolving potential circular references");
+				logger.trace("Eagerly caching bean '" + beanName + "' to allow for resolving potential circular references");
 			}
+			// 如果满足上面的判断, 则对早期 bean 添加单例工厂
 			addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
 		}
 
@@ -564,7 +568,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		try {
 			// 2. 填充属性
 			populateBean(beanName, mbd, instanceWrapper);
-			// 3. 对象初始化, 包括前置处理, 对象本身的初始化方法, 后置处理
+			// 3. 对象初始化, 包括前置处理, 对象的初始化方法, 后置处理
 			exposedObject = initializeBean(beanName, exposedObject, mbd);
 		} catch (Throwable ex) {
 			if (ex instanceof BeanCreationException && beanName.equals(((BeanCreationException) ex).getBeanName())) {
