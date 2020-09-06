@@ -16,55 +16,9 @@
 
 package org.springframework.beans.factory.support;
 
-import java.beans.PropertyEditor;
-import java.security.AccessControlContext;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.BeanWrapper;
-import org.springframework.beans.BeansException;
-import org.springframework.beans.PropertyEditorRegistrar;
-import org.springframework.beans.PropertyEditorRegistry;
-import org.springframework.beans.PropertyEditorRegistrySupport;
-import org.springframework.beans.SimpleTypeConverter;
-import org.springframework.beans.TypeConverter;
-import org.springframework.beans.TypeMismatchException;
-import org.springframework.beans.factory.BeanCreationException;
-import org.springframework.beans.factory.BeanCurrentlyInCreationException;
-import org.springframework.beans.factory.BeanDefinitionStoreException;
-import org.springframework.beans.factory.BeanFactory;
-import org.springframework.beans.factory.BeanFactoryUtils;
-import org.springframework.beans.factory.BeanIsAbstractException;
-import org.springframework.beans.factory.BeanIsNotAFactoryException;
-import org.springframework.beans.factory.BeanNotOfRequiredTypeException;
-import org.springframework.beans.factory.CannotLoadBeanClassException;
-import org.springframework.beans.factory.FactoryBean;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
-import org.springframework.beans.factory.SmartFactoryBean;
-import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.beans.factory.config.BeanDefinitionHolder;
-import org.springframework.beans.factory.config.BeanExpressionContext;
-import org.springframework.beans.factory.config.BeanExpressionResolver;
-import org.springframework.beans.factory.config.BeanPostProcessor;
-import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.beans.factory.config.DestructionAwareBeanPostProcessor;
-import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
-import org.springframework.beans.factory.config.Scope;
+import org.springframework.beans.*;
+import org.springframework.beans.factory.*;
+import org.springframework.beans.factory.config.*;
 import org.springframework.core.AttributeAccessor;
 import org.springframework.core.DecoratingClassLoader;
 import org.springframework.core.NamedThreadLocal;
@@ -72,11 +26,13 @@ import org.springframework.core.ResolvableType;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.log.LogMessage;
 import org.springframework.lang.Nullable;
-import org.springframework.util.Assert;
-import org.springframework.util.ClassUtils;
-import org.springframework.util.ObjectUtils;
-import org.springframework.util.StringUtils;
-import org.springframework.util.StringValueResolver;
+import org.springframework.util.*;
+
+import java.beans.PropertyEditor;
+import java.security.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Abstract base class for {@link org.springframework.beans.factory.BeanFactory}
@@ -228,13 +184,16 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	}
 
 	/**
+	 * 从容器中获取实例的核心方法.
+	 * 对于单例的对象, 会调用两次 getSingleton 方法
 	 * Return an instance, which may be shared or independent, of the specified bean.
-	 * @param name the name of the bean to retrieve
-	 * @param requiredType the required type of the bean to retrieve
-	 * @param args arguments to use when creating a bean instance using explicit arguments
-	 * (only applied when creating a new instance as opposed to retrieving an existing one)
+	 *
+	 * @param name          the name of the bean to retrieve
+	 * @param requiredType  the required type of the bean to retrieve
+	 * @param args          arguments to use when creating a bean instance using explicit arguments
+	 *                      (only applied when creating a new instance as opposed to retrieving an existing one)
 	 * @param typeCheckOnly whether the instance is obtained for a type check,
-	 * not for actual use
+	 *                      not for actual use
 	 * @return an instance of the bean
 	 * @throws BeansException if the bean could not be created
 	 */
@@ -246,15 +205,15 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 		String beanName = transformedBeanName(name);
 		Object bean;
 
+		// 第一次调用 getSingleTon 获取实例
 		// Eagerly check singleton cache for manually registered singletons.
 		Object sharedInstance = getSingleton(beanName);
 		if (sharedInstance != null && args == null) {
 			if (logger.isTraceEnabled()) {
 				if (isSingletonCurrentlyInCreation(beanName)) {
 					logger.trace("Returning eagerly cached instance of singleton bean '" + beanName +
-							"' that is not fully initialized yet - a consequence of a circular reference");
-				}
-				else {
+										 "' that is not fully initialized yet - a consequence of a circular reference");
+				} else {
 					logger.trace("Returning cached instance of singleton bean '" + beanName + "'");
 				}
 			}
@@ -304,26 +263,30 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 					for (String dep : dependsOn) {
 						if (isDependent(beanName, dep)) {
 							throw new BeanCreationException(mbd.getResourceDescription(), beanName,
-									"Circular depends-on relationship between '" + beanName + "' and '" + dep + "'");
+															"Circular depends-on relationship between '" + beanName + "' and '" + dep + "'");
 						}
 						registerDependentBean(dep, beanName);
 						try {
 							getBean(dep);
-						}
-						catch (NoSuchBeanDefinitionException ex) {
+						} catch (NoSuchBeanDefinitionException ex) {
 							throw new BeanCreationException(mbd.getResourceDescription(), beanName,
-									"'" + beanName + "' depends on missing bean '" + dep + "'", ex);
+															"'" + beanName + "' depends on missing bean '" + dep + "'", ex);
 						}
 					}
 				}
 
 				// Create bean instance.
 				if (mbd.isSingleton()) {
+					// 第二次调用 getSingleton 方法, 并指定 bean 工厂, 这里指定了 AbstractAutowireCapableBeanFactory#createBean 作为对象工厂
+					// 该方法里面主要处理三件事:
+					// 1. 获取单例
+					// 2. 没有则创建单例
+					// 3. 添加到单例池
 					sharedInstance = getSingleton(beanName, () -> {
 						try {
+							// 完成 bean 的创建
 							return createBean(beanName, mbd, args);
-						}
-						catch (BeansException ex) {
+						} catch (BeansException ex) {
 							// Explicitly remove instance from singleton cache: It might have been put there
 							// eagerly by the creation process, to allow for circular reference resolution.
 							// Also remove any beans that received a temporary reference to the bean.
@@ -332,22 +295,17 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 						}
 					});
 					bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
-				}
-
-				else if (mbd.isPrototype()) {
+				} else if (mbd.isPrototype()) {
 					// It's a prototype -> create a new instance.
 					Object prototypeInstance = null;
 					try {
 						beforePrototypeCreation(beanName);
 						prototypeInstance = createBean(beanName, mbd, args);
-					}
-					finally {
+					} finally {
 						afterPrototypeCreation(beanName);
 					}
 					bean = getObjectForBeanInstance(prototypeInstance, name, beanName, mbd);
-				}
-
-				else {
+				} else {
 					String scopeName = mbd.getScope();
 					if (!StringUtils.hasLength(scopeName)) {
 						throw new IllegalStateException("No scope name defined for bean ´" + beanName + "'");
@@ -361,18 +319,16 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 							beforePrototypeCreation(beanName);
 							try {
 								return createBean(beanName, mbd, args);
-							}
-							finally {
+							} finally {
 								afterPrototypeCreation(beanName);
 							}
 						});
 						bean = getObjectForBeanInstance(scopedInstance, name, beanName, mbd);
-					}
-					catch (IllegalStateException ex) {
+					} catch (IllegalStateException ex) {
 						throw new BeanCreationException(beanName,
-								"Scope '" + scopeName + "' is not active for the current thread; consider " +
-								"defining a scoped proxy for this bean if you intend to refer to it from a singleton",
-								ex);
+														"Scope '" + scopeName + "' is not active for the current thread; consider " +
+																"defining a scoped proxy for this bean if you intend to refer to it from a singleton",
+														ex);
 					}
 				}
 			}
