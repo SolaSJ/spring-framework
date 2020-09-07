@@ -16,14 +16,14 @@
 
 package org.springframework.context.support;
 
-import java.io.IOException;
-
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextException;
 import org.springframework.lang.Nullable;
+
+import java.io.IOException;
 
 /**
  * Base class for {@link org.springframework.context.ApplicationContext}
@@ -120,13 +120,19 @@ public abstract class AbstractRefreshableApplicationContext extends AbstractAppl
 	@Override
 	protected final void refreshBeanFactory() throws BeansException {
 		if (hasBeanFactory()) {
+			// 如果已经有 bean 工厂, 销毁并关闭 bean 工厂
 			destroyBeans();
 			closeBeanFactory();
 		}
 		try {
+			// 创建 bean 工厂, DefaultListableBeanFactory
 			DefaultListableBeanFactory beanFactory = createBeanFactory();
 			beanFactory.setSerializationId(getId());
+			// 自定义 bean 工厂的一些配置, 例如是否允许自动解决循环依赖 (allowCircularReferences)
 			customizeBeanFactory(beanFactory);
+			// 关键步骤, 加载 bean 定义到指定的 bean 工厂中, 通常委派给一个或多个 bean definition reader 来处理
+			// Load bean definitions into the given bean factory, typically through
+			// delegating to one or more bean definition readers.
 			loadBeanDefinitions(beanFactory);
 			this.beanFactory = beanFactory;
 		}

@@ -16,21 +16,8 @@
 
 package org.springframework.context.support;
 
-import java.io.IOException;
-import java.lang.annotation.Annotation;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.springframework.beans.BeansException;
 import org.springframework.beans.CachedIntrospectionResults;
 import org.springframework.beans.factory.BeanFactory;
@@ -40,29 +27,8 @@ import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.support.ResourceEditorRegistrar;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
-import org.springframework.context.ApplicationEvent;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.ApplicationEventPublisherAware;
-import org.springframework.context.ApplicationListener;
-import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.EmbeddedValueResolverAware;
-import org.springframework.context.EnvironmentAware;
-import org.springframework.context.HierarchicalMessageSource;
-import org.springframework.context.LifecycleProcessor;
-import org.springframework.context.MessageSource;
-import org.springframework.context.MessageSourceAware;
-import org.springframework.context.MessageSourceResolvable;
-import org.springframework.context.NoSuchMessageException;
-import org.springframework.context.PayloadApplicationEvent;
-import org.springframework.context.ResourceLoaderAware;
-import org.springframework.context.event.ApplicationEventMulticaster;
-import org.springframework.context.event.ContextClosedEvent;
-import org.springframework.context.event.ContextRefreshedEvent;
-import org.springframework.context.event.ContextStartedEvent;
-import org.springframework.context.event.ContextStoppedEvent;
-import org.springframework.context.event.SimpleApplicationEventMulticaster;
+import org.springframework.context.*;
+import org.springframework.context.event.*;
 import org.springframework.context.expression.StandardBeanExpressionResolver;
 import org.springframework.context.weaving.LoadTimeWeaverAware;
 import org.springframework.context.weaving.LoadTimeWeaverAwareProcessor;
@@ -82,6 +48,11 @@ import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.ReflectionUtils;
+
+import java.io.IOException;
+import java.lang.annotation.Annotation;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Abstract implementation of the {@link org.springframework.context.ApplicationContext}
@@ -513,51 +484,77 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		return this.applicationListeners;
 	}
 
+	/**
+	 * 加载或刷新配置的持久化描述, 这些配置可能是基于 Java 的配置, XML 文件, 配置文件等
+	 * Load or refresh the persistent representation of the configuration, which
+	 * might be from Java-based configuration, an XML file, a properties file, a
+	 * relational database schema, or some other format.
+	 * 作为一个启动方法, 当失败时, 它应该销毁已经创建的单例, 来避免资源悬空 (dangling?)
+	 * <p>As this is a startup method, it should destroy already created singletons
+	 * if it fails, to avoid dangling resources.
+	 * 换句话说, 在调用该方法后, 所有或为完成的单例应该被实例化
+	 * In other words, after invocation of this method,
+	 * either all or no singletons at all should be instantiated.
+	 *
+	 * @throws BeansException        if the bean factory could not be initialized 如果 bean 工厂不能被实例化时抛出异常
+	 * @throws IllegalStateException if already initialized and multiple refresh
+	 *                               attempts are not supported 如果已经实例化, 多次的 refresh 尝试将不被允许
+	 */
 	@Override
 	public void refresh() throws BeansException, IllegalStateException {
 		synchronized (this.startupShutdownMonitor) {
+			// 一些预备操作
 			// Prepare this context for refreshing.
 			prepareRefresh();
 
+			// 告知子类刷新内部 bean 工厂, 内部的 refreshBeanFactory() 是一个抽象方法, 需要子类具体实现 (见注释)
 			// Tell the subclass to refresh the internal bean factory.
 			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
 
+			// 给 bean 工厂配置一些标准的上下文特征
 			// Prepare the bean factory for use in this context.
 			prepareBeanFactory(beanFactory);
 
 			try {
+				// 允许子类对 bean 工厂进行后置处理
 				// Allows post-processing of the bean factory in context subclasses.
 				postProcessBeanFactory(beanFactory);
 
+				// 调用 bean 工厂的后置处理器
 				// Invoke factory processors registered as beans in the context.
 				invokeBeanFactoryPostProcessors(beanFactory);
 
+				// 注册 bean 的处理器, 会拦截 bean 的创建
 				// Register bean processors that intercept bean creation.
 				registerBeanPostProcessors(beanFactory);
 
+				// 国际化配置的处理
 				// Initialize message source for this context.
 				initMessageSource();
 
+				// 初始化事件多播器
 				// Initialize event multicaster for this context.
 				initApplicationEventMulticaster();
 
+				// 用于特定子类上下文中实例化特定的 bean
 				// Initialize other special beans in specific context subclasses.
 				onRefresh();
 
+				// 检查监听器并注册他们
 				// Check for listener beans and register them.
 				registerListeners();
 
+				// 实例化所有剩余的单例 (非懒加载的)
 				// Instantiate all remaining (non-lazy-init) singletons.
 				finishBeanFactoryInitialization(beanFactory);
 
+				// 最后一步: 发布相应的事件
 				// Last step: publish corresponding event.
 				finishRefresh();
-			}
-
-			catch (BeansException ex) {
+			} catch (BeansException ex) {
 				if (logger.isWarnEnabled()) {
 					logger.warn("Exception encountered during context initialization - " +
-							"cancelling refresh attempt: " + ex);
+										"cancelling refresh attempt: " + ex);
 				}
 
 				// Destroy already created singletons to avoid dangling resources.
@@ -568,9 +565,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 
 				// Propagate exception to caller.
 				throw ex;
-			}
-
-			finally {
+			} finally {
 				// Reset common introspection caches in Spring's core, since we
 				// might not ever need metadata for singleton beans anymore...
 				resetCommonCaches();
@@ -579,10 +574,12 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	}
 
 	/**
+	 * 该方法进行一些准备工作, 记录开始时间, 设置活动状态, 初始化占位符属性, 校验必须的属性, 创建监听器, Event??
 	 * Prepare this context for refreshing, setting its startup date and
 	 * active flag as well as performing any initialization of property sources.
 	 */
 	protected void prepareRefresh() {
+		// 记录开始时间, 切换活动状态
 		// Switch to active.
 		this.startupDate = System.currentTimeMillis();
 		this.closed.set(false);
@@ -591,29 +588,31 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		if (logger.isDebugEnabled()) {
 			if (logger.isTraceEnabled()) {
 				logger.trace("Refreshing " + this);
-			}
-			else {
+			} else {
 				logger.debug("Refreshing " + getDisplayName());
 			}
 		}
 
+		// 初始化上下文环境中的占位符属性
 		// Initialize any placeholder property sources in the context environment.
 		initPropertySources();
 
+		// 校验所有被标记为必须设置的属性, 检查这些必须属性对应的 value 是否不为 null
 		// Validate that all properties marked as required are resolvable:
 		// see ConfigurablePropertyResolver#setRequiredProperties
 		getEnvironment().validateRequiredProperties();
 
+		// 创建监听器, 这里仅创建了空集合
 		// Store pre-refresh ApplicationListeners...
 		if (this.earlyApplicationListeners == null) {
 			this.earlyApplicationListeners = new LinkedHashSet<>(this.applicationListeners);
-		}
-		else {
+		} else {
 			// Reset local application listeners to pre-refresh state.
 			this.applicationListeners.clear();
 			this.applicationListeners.addAll(this.earlyApplicationListeners);
 		}
 
+		// ??
 		// Allow for the collection of early ApplicationEvents,
 		// to be published once the multicaster is available...
 		this.earlyApplicationEvents = new LinkedHashSet<>();
